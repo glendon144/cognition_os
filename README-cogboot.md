@@ -19,6 +19,42 @@ considered ready.
 - SSH key at ~/.ssh/id_ed25519 with access to blues.clonesvr.com
 - blues.clonesvr.com in ~/.ssh/known_hosts
 - git installed via pkgsrc (devel/git-base)
+- a shared virtualenv at `/home/gross/venvs/cognition-os`
+
+## Provisioning Strategy
+
+For deployable images, do not rely on every node downloading the full pkgsrc
+ tree just to get `git`.
+
+Preferred approaches:
+
+- Build a base NetBSD image with `git` and Python preinstalled.
+- Prebuild the shared virtualenv used by the rc.d services so FastAPI/Uvicorn
+  and related Python modules are present before first boot.
+- Use pkgsrc binary packages with `pkg_add` or `pkgin` instead of building
+  from a full local pkgsrc checkout.
+- Optionally host your own small binary package set if you want reproducible
+  installs across nodes.
+
+Example NetBSD binary package bootstrap:
+
+    PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$(uname -r|cut -f '1 2' -d.)/All/"
+    export PKG_PATH
+    pkg_add pkgin
+    pkgin install git python310
+
+Example shared runtime bootstrap:
+
+    /home/gross/pkg/bin/python3.10 -m venv /home/gross/venvs/cognition-os
+    /home/gross/venvs/cognition-os/bin/pip install -r /home/gross/src/cognition_os/requirements-shared-venv.txt
+
+Licensing note:
+
+- `pkgsrc` itself is BSD-licensed, but each packaged program keeps its own
+  upstream license.
+- For this project, distributing `git` is generally straightforward, but
+  redistribution should still be reviewed per package if you expand the base
+  image contents.
 
 ## Installation
 
@@ -40,6 +76,23 @@ Add to /etc/rc.conf:
     licd_host="0.0.0.0"
     licd_port="8777"
     licd_allowlist="peace,blues,jazz,optiplex310,m2-arm64,xps-arm64"
+
+    # Optional cogboot knobs
+    blues_host="blues.clonesvr.com"
+    cogboot_git_user="gross"
+    cogboot_git_branch="main"
+    cogboot_git_bin="/home/gross/pkg/bin/git"
+    cogboot_ssh_key="/home/gross/.ssh/id_ed25519"
+    cogboot_known_hosts="/home/gross/.ssh/known_hosts"
+    cogboot_retry_count="5"
+    cogboot_retry_delay="5"
+
+    # Optional Python paths
+    licd_python_bin="/home/gross/venvs/cognition-os/bin/python"
+    tortoised_python_bin="/home/gross/venvs/cognition-os/bin/python"
+    clones_brain_python_bin="/home/gross/venvs/cognition-os/bin/python"
+    dream_server_python_bin="/home/gross/venvs/cognition-os/bin/python"
+    dream_server_health_path="/server_status"
 
 ## Service Management
 
@@ -79,6 +132,17 @@ Add to /etc/rc.conf:
 
 - cogboot uses git pull --ff-only on subsequent boots, so local changes
   on the VM will not be clobbered but will block the pull if they conflict.
+- cogboot clones the Dream service from the `dream` repository into the local
+  `dream_server` checkout path.
+- If a target source directory already exists but is not a Git checkout,
+  cogboot moves it aside with a timestamped `.pre-git-YYYYMMDD-HHMMSS` suffix
+  before cloning the managed repository.
+- The service wrappers assume a shared virtualenv at
+  `/home/gross/venvs/cognition-os` unless overridden in `rc.conf`.
+- The shared virtualenv is currently intended to use the curated
+  `requirements-shared-venv.txt` from this repository rather than service-local
+  requirement files, to avoid platform-specific compiled dependency problems
+  during early deployments.
 - clones_brain and dream_server use uvicorn; install via pkgsrc or pip after
   Python 3.10 is available.
 - The licd allowlist should include the hostnames of all nodes in your

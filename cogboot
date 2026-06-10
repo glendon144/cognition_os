@@ -18,43 +18,125 @@ name="cogboot"
 rcvar=$name
 start_cmd="cogboot_start"
 stop_cmd=":"
+status_cmd=":"
+extra_commands="status"
 
 COGUSER="gross"
 COGDIR="/home/${COGUSER}"
-BLUES="blues.clonesvr.com"
-GIT_BASE="ssh://git@${BLUES}/home/${COGUSER}/git"
-SSH_KEY="${COGDIR}/.ssh/id_ed25519"
 
-REPOS="licd tortoised clones-brain dream_server"
+REPO_SPECS="
+licd:licd
+tortoised:tortoised
+clones-brain:clones-brain
+dream:dream_server
+"
+
+# rc.conf defaults
+blues_host="${blues_host:-blues.clonesvr.com}"
+cogboot_git_user="${cogboot_git_user:-${COGUSER}}"
+cogboot_git_branch="${cogboot_git_branch:-main}"
+cogboot_git_bin="${cogboot_git_bin:-/home/${COGUSER}/pkg/bin/git}"
+cogboot_srcdir="${cogboot_srcdir:-${COGDIR}/src}"
+cogboot_ssh_key="${cogboot_ssh_key:-${COGDIR}/.ssh/id_ed25519}"
+cogboot_known_hosts="${cogboot_known_hosts:-${COGDIR}/.ssh/known_hosts}"
+cogboot_backup_suffix="${cogboot_backup_suffix:-pre-git-$(date +%Y%m%d-%H%M%S)}"
+cogboot_retry_count="${cogboot_retry_count:-5}"
+cogboot_retry_delay="${cogboot_retry_delay:-5}"
+
+GIT_BASE="ssh://${cogboot_git_user}@${blues_host}/home/${COGUSER}/git"
+GIT_SSH_COMMAND="ssh -i ${cogboot_ssh_key} -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile=${cogboot_known_hosts}"
 
 cogboot_start()
 {
     echo "cogboot: starting Cognition OS bootstrap"
 
     # Ensure SSH key permissions are correct
-    if [ -f "${SSH_KEY}" ]; then
-        chmod 600 "${SSH_KEY}"
-        chown ${COGUSER} "${SSH_KEY}"
+    if [ -f "${cogboot_ssh_key}" ]; then
+        chmod 600 "${cogboot_ssh_key}"
+        chown ${COGUSER} "${cogboot_ssh_key}"
     else
-        echo "cogboot: WARNING — SSH key not found at ${SSH_KEY}"
+        echo "cogboot: WARNING - SSH key not found at ${cogboot_ssh_key}"
         echo "cogboot: Cognitive services will not be started."
         return 1
     fi
 
-    for repo in ${REPOS}; do
-        target="${COGDIR}/src/${repo}"
+    if [ ! -f "${cogboot_known_hosts}" ]; then
+        echo "cogboot: WARNING - known_hosts not found at ${cogboot_known_hosts}"
+        echo "cogboot: Cognitive services will not be started."
+        return 1
+    fi
+
+    if [ ! -x "${cogboot_git_bin}" ]; then
+        echo "cogboot: WARNING - git not executable at ${cogboot_git_bin}"
+        echo "cogboot: Cognitive services will not be started."
+        return 1
+    fi
+
+    failed=0
+    for spec in ${REPO_SPECS}; do
+        repo=${spec%%:*}
+        checkout=${spec#*:}
+        target="${cogboot_srcdir}/${checkout}"
+        rc=0
         if [ -d "${target}/.git" ]; then
-            echo "cogboot: updating ${repo}..."
-            su -m ${COGUSER} -c "cd ${target} && git pull --ff-only 2>&1" \
-                | logger -t cogboot
+            echo "cogboot: updating ${repo} into ${checkout}..."
+            output=$(su -m ${COGUSER} -c \
+                "cd ${target} && HOME=${COGDIR} GIT_SSH_COMMAND='${GIT_SSH_COMMAND}' ${cogboot_git_bin} pull --ff-only" \
+                2>&1)
+            rc=$?
+        elif [ -e "${target}" ]; then
+            backup="${target}.${cogboot_backup_suffix}"
+            echo "cogboot: moving existing non-git path ${target} to ${backup}..."
+            if mv "${target}" "${backup}" 2>/dev/null; then
+                output=$(su -m ${COGUSER} -c \
+                    "mkdir -p ${cogboot_srcdir} && \
+                     HOME=${COGDIR} GIT_SSH_COMMAND='${GIT_SSH_COMMAND}' ${cogboot_git_bin} clone --branch ${cogboot_git_branch} ${GIT_BASE}/${repo} ${target}" \
+                    2>&1)
+                rc=$?
+            else
+                output="failed to move existing path ${target} to ${backup}"
+                rc=1
+            fi
         else
-            echo "cogboot: cloning ${repo}..."
-            su -m ${COGUSER} -c \
-                "mkdir -p ${COGDIR}/src && \
-                 git clone ${GIT_BASE}/${repo} ${target} 2>&1" \
-                | logger -t cogboot
+            echo "cogboot: cloning ${repo} into ${checkout}..."
+            output=$(su -m ${COGUSER} -c \
+                "mkdir -p ${cogboot_srcdir} && \
+                 HOME=${COGDIR} GIT_SSH_COMMAND='${GIT_SSH_COMMAND}' ${cogboot_git_bin} clone --branch ${cogboot_git_branch} ${GIT_BASE}/${repo} ${target}" \
+                2>&1)
+            rc=$?
+        fi
+
+        retries=0
+        while [ $rc -ne 0 ] && [ $retries -lt "${cogboot_retry_count}" ]; do
+            retries=$((retries + 1))
+            echo "cogboot: retrying ${repo} (${retries}/${cogboot_retry_count}) after ${cogboot_retry_delay}s..."
+            sleep "${cogboot_retry_delay}"
+
+            if [ -d "${target}/.git" ]; then
+                output=$(su -m ${COGUSER} -c \
+                    "cd ${target} && HOME=${COGDIR} GIT_SSH_COMMAND='${GIT_SSH_COMMAND}' ${cogboot_git_bin} pull --ff-only" \
+                    2>&1)
+                rc=$?
+            elif [ ! -e "${target}" ]; then
+                output=$(su -m ${COGUSER} -c \
+                    "mkdir -p ${cogboot_srcdir} && \
+                     HOME=${COGDIR} GIT_SSH_COMMAND='${GIT_SSH_COMMAND}' ${cogboot_git_bin} clone --branch ${cogboot_git_branch} ${GIT_BASE}/${repo} ${target}" \
+                    2>&1)
+                rc=$?
+            fi
+        done
+
+        printf '%s\n' "${output}" | logger -t cogboot
+        if [ $rc -ne 0 ]; then
+            echo "cogboot: ERROR - ${repo} failed"
+            failed=1
         fi
     done
+
+    if [ $failed -ne 0 ]; then
+        echo "cogboot: one or more repositories failed to sync"
+        return 1
+    fi
 
     echo "cogboot: all repositories ready"
 }

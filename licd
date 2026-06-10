@@ -32,6 +32,7 @@ licd_port="${licd_port:-8777}"
 licd_allowlist="${licd_allowlist:-}"
 licd_token="${licd_token:-change-me}"
 licd_require_token="${licd_require_token:-0}"
+licd_python_bin="${licd_python_bin:-/home/${COGUSER}/venvs/cognition-os/bin/python}"
 
 pidfile="/var/run/licd.pid"
 logfile="/var/log/licd.log"
@@ -39,6 +40,22 @@ logfile="/var/log/licd.log"
 start_cmd="licd_start"
 stop_cmd="licd_stop"
 status_cmd="licd_status"
+extra_commands="status"
+
+licd_health_host()
+{
+    case "${licd_host}" in
+        0.0.0.0|"")
+            echo "127.0.0.1"
+            ;;
+        ::|"::0")
+            echo "::1"
+            ;;
+        *)
+            echo "${licd_host}"
+            ;;
+    esac
+}
 
 licd_start()
 {
@@ -49,8 +66,17 @@ licd_start()
         return 1
     fi
 
+    if [ ! -x "${licd_python_bin}" ]; then
+        echo "licd: ERROR — python not executable at ${licd_python_bin}"
+        return 1
+    fi
+
     mkdir -p "${STORAGE}"
     chown ${COGUSER} "${STORAGE}"
+    : > "${logfile}"
+    : > "${pidfile}"
+    chown ${COGUSER} "${logfile}" "${pidfile}"
+    chmod 644 "${logfile}" "${pidfile}"
 
     su -m ${COGUSER} -c "
         cd ${LICD_SRC}
@@ -58,16 +84,17 @@ licd_start()
         LICD_HOST_ALLOWLIST=${licd_allowlist} \
         LICD_SHARED_TOKEN=${licd_token} \
         LICD_REQUIRE_TOKEN=${licd_require_token} \
-        python3 licd.py --host ${licd_host} --port ${licd_port} \
+        ${licd_python_bin} licd.py --host ${licd_host} --port ${licd_port} \
             >> ${logfile} 2>&1 &
         echo \$! > ${pidfile}
     "
 
     # Wait for health endpoint
+    health_host=$(licd_health_host)
     attempts=0
     while [ $attempts -lt 15 ]; do
         if ftp -4 -q 1 -o - \
-            "http://${licd_host}:${licd_port}/health" >/dev/null 2>&1; then
+            "http://${health_host}:${licd_port}/health" >/dev/null 2>&1; then
             echo "licd: healthy on port ${licd_port}"
             return 0
         fi
@@ -95,9 +122,10 @@ licd_status()
     if [ -f "${pidfile}" ]; then
         pid=$(cat "${pidfile}")
         if kill -0 "${pid}" 2>/dev/null; then
+            health_host=$(licd_health_host)
             echo "licd: running as pid ${pid}"
             ftp -4 -q 1 -o - \
-                "http://${licd_host}:${licd_port}/health" 2>/dev/null \
+                "http://${health_host}:${licd_port}/health" 2>/dev/null \
                 || echo "licd: WARNING — process up but health check failed"
         else
             echo "licd: pidfile exists but process ${pid} is dead"

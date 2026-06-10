@@ -24,6 +24,7 @@ DREAM_SRC="${COGDIR}/src/dream_server"
 
 dream_server_host="${dream_server_host:-127.0.0.1}"
 dream_server_port="${dream_server_port:-8181}"
+dream_server_python_bin="${dream_server_python_bin:-/home/${COGUSER}/venvs/cognition-os/bin/python}"
 
 pidfile="/var/run/dream_server.pid"
 logfile="/var/log/dream_server.log"
@@ -31,6 +32,24 @@ logfile="/var/log/dream_server.log"
 start_cmd="dream_server_start"
 stop_cmd="dream_server_stop"
 status_cmd="dream_server_status"
+extra_commands="status"
+
+dream_server_health_path="${dream_server_health_path:-/server_status}"
+
+dream_server_health_host()
+{
+    case "${dream_server_host}" in
+        0.0.0.0|"")
+            echo "127.0.0.1"
+            ;;
+        ::|"::0")
+            echo "::1"
+            ;;
+        *)
+            echo "${dream_server_host}"
+            ;;
+    esac
+}
 
 dream_server_start()
 {
@@ -41,19 +60,30 @@ dream_server_start()
         return 1
     fi
 
+    if [ ! -x "${dream_server_python_bin}" ]; then
+        echo "dream_server: ERROR — python not executable at ${dream_server_python_bin}"
+        return 1
+    fi
+
+    : > "${logfile}"
+    : > "${pidfile}"
+    chown ${COGUSER} "${logfile}" "${pidfile}"
+    chmod 644 "${logfile}" "${pidfile}"
+
     su -m ${COGUSER} -c "
         cd ${DREAM_SRC}
-        python3 -m uvicorn app:app \
+        ${dream_server_python_bin} -m uvicorn dream_server:app \
             --host ${dream_server_host} \
             --port ${dream_server_port} \
             >> ${logfile} 2>&1 &
         echo \$! > ${pidfile}
     "
 
+    health_host=$(dream_server_health_host)
     attempts=0
     while [ $attempts -lt 15 ]; do
         if ftp -4 -q 1 -o - \
-            "http://${dream_server_host}:${dream_server_port}/health" >/dev/null 2>&1; then
+            "http://${health_host}:${dream_server_port}${dream_server_health_path}" >/dev/null 2>&1; then
             echo "dream_server: healthy on port ${dream_server_port}"
             return 0
         fi
@@ -81,7 +111,11 @@ dream_server_status()
     if [ -f "${pidfile}" ]; then
         pid=$(cat "${pidfile}")
         if kill -0 "${pid}" 2>/dev/null; then
+            health_host=$(dream_server_health_host)
             echo "dream_server: running as pid ${pid}"
+            ftp -4 -q 1 -o - \
+                "http://${health_host}:${dream_server_port}${dream_server_health_path}" 2>/dev/null \
+                || echo "dream_server: WARNING — process up but health check failed"
         else
             echo "dream_server: pidfile exists but process ${pid} is dead"
         fi

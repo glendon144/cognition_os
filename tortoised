@@ -24,6 +24,7 @@ TORTOISED_SRC="${COGDIR}/src/tortoised"
 
 tortoised_host="${tortoised_host:-0.0.0.0}"
 tortoised_port="${tortoised_port:-8767}"
+tortoised_python_bin="${tortoised_python_bin:-/home/${COGUSER}/venvs/cognition-os/bin/python}"
 
 pidfile="/var/run/tortoised.pid"
 logfile="/var/log/tortoised.log"
@@ -31,6 +32,22 @@ logfile="/var/log/tortoised.log"
 start_cmd="tortoised_start"
 stop_cmd="tortoised_stop"
 status_cmd="tortoised_status"
+extra_commands="status"
+
+tortoised_health_host()
+{
+    case "${tortoised_host}" in
+        0.0.0.0|"")
+            echo "127.0.0.1"
+            ;;
+        ::|"::0")
+            echo "::1"
+            ;;
+        *)
+            echo "${tortoised_host}"
+            ;;
+    esac
+}
 
 tortoised_start()
 {
@@ -41,17 +58,30 @@ tortoised_start()
         return 1
     fi
 
+    if [ ! -x "${tortoised_python_bin}" ]; then
+        echo "tortoised: ERROR — python not executable at ${tortoised_python_bin}"
+        return 1
+    fi
+
+    : > "${logfile}"
+    : > "${pidfile}"
+    chown ${COGUSER} "${logfile}" "${pidfile}"
+    chmod 644 "${logfile}" "${pidfile}"
+
     su -m ${COGUSER} -c "
         cd ${TORTOISED_SRC}
-        python3 tortoised.py --host ${tortoised_host} --port ${tortoised_port} \
+        TORTOISED_HOST=${tortoised_host} \
+        TORTOISED_PORT=${tortoised_port} \
+        ${tortoised_python_bin} tortoised.py \
             >> ${logfile} 2>&1 &
         echo \$! > ${pidfile}
     "
 
+    health_host=$(tortoised_health_host)
     attempts=0
     while [ $attempts -lt 15 ]; do
         if ftp -4 -q 1 -o - \
-            "http://${tortoised_host}:${tortoised_port}/health" >/dev/null 2>&1; then
+            "http://${health_host}:${tortoised_port}/health" >/dev/null 2>&1; then
             echo "tortoised: healthy on port ${tortoised_port}"
             return 0
         fi
@@ -79,7 +109,11 @@ tortoised_status()
     if [ -f "${pidfile}" ]; then
         pid=$(cat "${pidfile}")
         if kill -0 "${pid}" 2>/dev/null; then
+            health_host=$(tortoised_health_host)
             echo "tortoised: running as pid ${pid}"
+            ftp -4 -q 1 -o - \
+                "http://${health_host}:${tortoised_port}/health" 2>/dev/null \
+                || echo "tortoised: WARNING — process up but health check failed"
         else
             echo "tortoised: pidfile exists but process ${pid} is dead"
         fi

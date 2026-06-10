@@ -24,6 +24,7 @@ CLONES_SRC="${COGDIR}/src/clones-brain"
 
 clones_brain_host="${clones_brain_host:-127.0.0.1}"
 clones_brain_port="${clones_brain_port:-8765}"
+clones_brain_python_bin="${clones_brain_python_bin:-/home/${COGUSER}/venvs/cognition-os/bin/python}"
 
 pidfile="/var/run/clones_brain.pid"
 logfile="/var/log/clones_brain.log"
@@ -31,6 +32,22 @@ logfile="/var/log/clones_brain.log"
 start_cmd="clones_brain_start"
 stop_cmd="clones_brain_stop"
 status_cmd="clones_brain_status"
+extra_commands="status"
+
+clones_brain_health_host()
+{
+    case "${clones_brain_host}" in
+        0.0.0.0|"")
+            echo "127.0.0.1"
+            ;;
+        ::|"::0")
+            echo "::1"
+            ;;
+        *)
+            echo "${clones_brain_host}"
+            ;;
+    esac
+}
 
 clones_brain_start()
 {
@@ -41,19 +58,30 @@ clones_brain_start()
         return 1
     fi
 
+    if [ ! -x "${clones_brain_python_bin}" ]; then
+        echo "clones_brain: ERROR — python not executable at ${clones_brain_python_bin}"
+        return 1
+    fi
+
+    : > "${logfile}"
+    : > "${pidfile}"
+    chown ${COGUSER} "${logfile}" "${pidfile}"
+    chmod 644 "${logfile}" "${pidfile}"
+
     su -m ${COGUSER} -c "
         cd ${CLONES_SRC}
-        python3 -m uvicorn app:app \
+        ${clones_brain_python_bin} -m uvicorn clones_brain.server:app \
             --host ${clones_brain_host} \
             --port ${clones_brain_port} \
             >> ${logfile} 2>&1 &
         echo \$! > ${pidfile}
     "
 
+    health_host=$(clones_brain_health_host)
     attempts=0
     while [ $attempts -lt 15 ]; do
         if ftp -4 -q 1 -o - \
-            "http://${clones_brain_host}:${clones_brain_port}/health" >/dev/null 2>&1; then
+            "http://${health_host}:${clones_brain_port}/health" >/dev/null 2>&1; then
             echo "clones_brain: healthy on port ${clones_brain_port}"
             return 0
         fi
@@ -81,7 +109,11 @@ clones_brain_status()
     if [ -f "${pidfile}" ]; then
         pid=$(cat "${pidfile}")
         if kill -0 "${pid}" 2>/dev/null; then
+            health_host=$(clones_brain_health_host)
             echo "clones_brain: running as pid ${pid}"
+            ftp -4 -q 1 -o - \
+                "http://${health_host}:${clones_brain_port}/health" 2>/dev/null \
+                || echo "clones_brain: WARNING — process up but health check failed"
         else
             echo "clones_brain: pidfile exists but process ${pid} is dead"
         fi
