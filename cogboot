@@ -1,0 +1,63 @@
+#!/bin/sh
+#
+# cogboot — Cognition OS bootstrap service
+# Clones or updates all cognitive services from blues.clonesvr.com,
+# then starts them in dependency order.
+#
+# Install: cp cogboot /etc/rc.d/cogboot && chmod 555 /etc/rc.d/cogboot
+# Enable:  echo 'cogboot=YES' >> /etc/rc.conf
+#
+# PROVIDE: cogboot
+# REQUIRE: NETWORKING sshd
+# BEFORE:  licd tortoised clones_brain dream_server
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="cogboot"
+rcvar=$name
+start_cmd="cogboot_start"
+stop_cmd=":"
+
+COGUSER="gross"
+COGDIR="/home/${COGUSER}"
+BLUES="blues.clonesvr.com"
+GIT_BASE="ssh://git@${BLUES}/home/${COGUSER}/git"
+SSH_KEY="${COGDIR}/.ssh/id_ed25519"
+
+REPOS="licd tortoised clones-brain dream_server"
+
+cogboot_start()
+{
+    echo "cogboot: starting Cognition OS bootstrap"
+
+    # Ensure SSH key permissions are correct
+    if [ -f "${SSH_KEY}" ]; then
+        chmod 600 "${SSH_KEY}"
+        chown ${COGUSER} "${SSH_KEY}"
+    else
+        echo "cogboot: WARNING — SSH key not found at ${SSH_KEY}"
+        echo "cogboot: Cognitive services will not be started."
+        return 1
+    fi
+
+    for repo in ${REPOS}; do
+        target="${COGDIR}/src/${repo}"
+        if [ -d "${target}/.git" ]; then
+            echo "cogboot: updating ${repo}..."
+            su -m ${COGUSER} -c "cd ${target} && git pull --ff-only 2>&1" \
+                | logger -t cogboot
+        else
+            echo "cogboot: cloning ${repo}..."
+            su -m ${COGUSER} -c \
+                "mkdir -p ${COGDIR}/src && \
+                 git clone ${GIT_BASE}/${repo} ${target} 2>&1" \
+                | logger -t cogboot
+        fi
+    done
+
+    echo "cogboot: all repositories ready"
+}
+
+load_rc_config $name
+run_rc_command "$1"

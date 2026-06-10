@@ -1,0 +1,94 @@
+#!/bin/sh
+#
+# dream_server — Dream capsule storage server (DCCP/RFC-1976)
+#
+# Install: cp dream_server /etc/rc.d/dream_server && chmod 555 /etc/rc.d/dream_server
+# Enable:  echo 'dream_server=YES' >> /etc/rc.conf
+#
+# Optional rc.conf knobs:
+#   dream_server_host="127.0.0.1"
+#   dream_server_port="8181"
+#
+# PROVIDE: dream_server
+# REQUIRE: NETWORKING cogboot
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="dream_server"
+rcvar=$name
+
+COGUSER="gross"
+COGDIR="/home/${COGUSER}"
+DREAM_SRC="${COGDIR}/src/dream_server"
+
+dream_server_host="${dream_server_host:-127.0.0.1}"
+dream_server_port="${dream_server_port:-8181}"
+
+pidfile="/var/run/dream_server.pid"
+logfile="/var/log/dream_server.log"
+
+start_cmd="dream_server_start"
+stop_cmd="dream_server_stop"
+status_cmd="dream_server_status"
+
+dream_server_start()
+{
+    echo "dream_server: starting on ${dream_server_host}:${dream_server_port}"
+
+    if [ ! -d "${DREAM_SRC}" ]; then
+        echo "dream_server: ERROR — ${DREAM_SRC} not found. Run cogboot first."
+        return 1
+    fi
+
+    su -m ${COGUSER} -c "
+        cd ${DREAM_SRC}
+        python3 -m uvicorn app:app \
+            --host ${dream_server_host} \
+            --port ${dream_server_port} \
+            >> ${logfile} 2>&1 &
+        echo \$! > ${pidfile}
+    "
+
+    attempts=0
+    while [ $attempts -lt 15 ]; do
+        if ftp -4 -q 1 -o - \
+            "http://${dream_server_host}:${dream_server_port}/health" >/dev/null 2>&1; then
+            echo "dream_server: healthy on port ${dream_server_port}"
+            return 0
+        fi
+        sleep 1
+        attempts=$((attempts + 1))
+    done
+
+    echo "dream_server: WARNING — health check timed out after 15 seconds"
+}
+
+dream_server_stop()
+{
+    if [ -f "${pidfile}" ]; then
+        pid=$(cat "${pidfile}")
+        echo "dream_server: stopping pid ${pid}"
+        kill "${pid}" 2>/dev/null
+        rm -f "${pidfile}"
+    else
+        echo "dream_server: not running"
+    fi
+}
+
+dream_server_status()
+{
+    if [ -f "${pidfile}" ]; then
+        pid=$(cat "${pidfile}")
+        if kill -0 "${pid}" 2>/dev/null; then
+            echo "dream_server: running as pid ${pid}"
+        else
+            echo "dream_server: pidfile exists but process ${pid} is dead"
+        fi
+    else
+        echo "dream_server: not running"
+    fi
+}
+
+load_rc_config $name
+run_rc_command "$1"

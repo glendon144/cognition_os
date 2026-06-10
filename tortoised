@@ -1,0 +1,92 @@
+#!/bin/sh
+#
+# tortoised — tortoised inference service
+#
+# Install: cp tortoised /etc/rc.d/tortoised && chmod 555 /etc/rc.d/tortoised
+# Enable:  echo 'tortoised=YES' >> /etc/rc.conf
+#
+# Optional rc.conf knobs:
+#   tortoised_host="0.0.0.0"
+#   tortoised_port="8767"
+#
+# PROVIDE: tortoised
+# REQUIRE: NETWORKING cogboot
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="tortoised"
+rcvar=$name
+
+COGUSER="gross"
+COGDIR="/home/${COGUSER}"
+TORTOISED_SRC="${COGDIR}/src/tortoised"
+
+tortoised_host="${tortoised_host:-0.0.0.0}"
+tortoised_port="${tortoised_port:-8767}"
+
+pidfile="/var/run/tortoised.pid"
+logfile="/var/log/tortoised.log"
+
+start_cmd="tortoised_start"
+stop_cmd="tortoised_stop"
+status_cmd="tortoised_status"
+
+tortoised_start()
+{
+    echo "tortoised: starting on ${tortoised_host}:${tortoised_port}"
+
+    if [ ! -d "${TORTOISED_SRC}" ]; then
+        echo "tortoised: ERROR — ${TORTOISED_SRC} not found. Run cogboot first."
+        return 1
+    fi
+
+    su -m ${COGUSER} -c "
+        cd ${TORTOISED_SRC}
+        python3 tortoised.py --host ${tortoised_host} --port ${tortoised_port} \
+            >> ${logfile} 2>&1 &
+        echo \$! > ${pidfile}
+    "
+
+    attempts=0
+    while [ $attempts -lt 15 ]; do
+        if ftp -4 -q 1 -o - \
+            "http://${tortoised_host}:${tortoised_port}/health" >/dev/null 2>&1; then
+            echo "tortoised: healthy on port ${tortoised_port}"
+            return 0
+        fi
+        sleep 1
+        attempts=$((attempts + 1))
+    done
+
+    echo "tortoised: WARNING — health check timed out after 15 seconds"
+}
+
+tortoised_stop()
+{
+    if [ -f "${pidfile}" ]; then
+        pid=$(cat "${pidfile}")
+        echo "tortoised: stopping pid ${pid}"
+        kill "${pid}" 2>/dev/null
+        rm -f "${pidfile}"
+    else
+        echo "tortoised: not running"
+    fi
+}
+
+tortoised_status()
+{
+    if [ -f "${pidfile}" ]; then
+        pid=$(cat "${pidfile}")
+        if kill -0 "${pid}" 2>/dev/null; then
+            echo "tortoised: running as pid ${pid}"
+        else
+            echo "tortoised: pidfile exists but process ${pid} is dead"
+        fi
+    else
+        echo "tortoised: not running"
+    fi
+}
+
+load_rc_config $name
+run_rc_command "$1"

@@ -1,0 +1,94 @@
+#!/bin/sh
+#
+# clones_brain — clones-brain local SQLite/FastAPI memory service
+#
+# Install: cp clones_brain /etc/rc.d/clones_brain && chmod 555 /etc/rc.d/clones_brain
+# Enable:  echo 'clones_brain=YES' >> /etc/rc.conf
+#
+# Optional rc.conf knobs:
+#   clones_brain_host="127.0.0.1"
+#   clones_brain_port="8765"
+#
+# PROVIDE: clones_brain
+# REQUIRE: NETWORKING cogboot
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="clones_brain"
+rcvar=$name
+
+COGUSER="gross"
+COGDIR="/home/${COGUSER}"
+CLONES_SRC="${COGDIR}/src/clones-brain"
+
+clones_brain_host="${clones_brain_host:-127.0.0.1}"
+clones_brain_port="${clones_brain_port:-8765}"
+
+pidfile="/var/run/clones_brain.pid"
+logfile="/var/log/clones_brain.log"
+
+start_cmd="clones_brain_start"
+stop_cmd="clones_brain_stop"
+status_cmd="clones_brain_status"
+
+clones_brain_start()
+{
+    echo "clones_brain: starting on ${clones_brain_host}:${clones_brain_port}"
+
+    if [ ! -d "${CLONES_SRC}" ]; then
+        echo "clones_brain: ERROR — ${CLONES_SRC} not found. Run cogboot first."
+        return 1
+    fi
+
+    su -m ${COGUSER} -c "
+        cd ${CLONES_SRC}
+        python3 -m uvicorn app:app \
+            --host ${clones_brain_host} \
+            --port ${clones_brain_port} \
+            >> ${logfile} 2>&1 &
+        echo \$! > ${pidfile}
+    "
+
+    attempts=0
+    while [ $attempts -lt 15 ]; do
+        if ftp -4 -q 1 -o - \
+            "http://${clones_brain_host}:${clones_brain_port}/health" >/dev/null 2>&1; then
+            echo "clones_brain: healthy on port ${clones_brain_port}"
+            return 0
+        fi
+        sleep 1
+        attempts=$((attempts + 1))
+    done
+
+    echo "clones_brain: WARNING — health check timed out after 15 seconds"
+}
+
+clones_brain_stop()
+{
+    if [ -f "${pidfile}" ]; then
+        pid=$(cat "${pidfile}")
+        echo "clones_brain: stopping pid ${pid}"
+        kill "${pid}" 2>/dev/null
+        rm -f "${pidfile}"
+    else
+        echo "clones_brain: not running"
+    fi
+}
+
+clones_brain_status()
+{
+    if [ -f "${pidfile}" ]; then
+        pid=$(cat "${pidfile}")
+        if kill -0 "${pid}" 2>/dev/null; then
+            echo "clones_brain: running as pid ${pid}"
+        else
+            echo "clones_brain: pidfile exists but process ${pid} is dead"
+        fi
+    else
+        echo "clones_brain: not running"
+    fi
+}
+
+load_rc_config $name
+run_rc_command "$1"

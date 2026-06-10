@@ -1,0 +1,111 @@
+#!/bin/sh
+#
+# licd — Local Inference Controller Daemon
+#
+# Install: cp licd /etc/rc.d/licd && chmod 555 /etc/rc.d/licd
+# Enable:  echo 'licd=YES' >> /etc/rc.conf
+#
+# Optional rc.conf knobs:
+#   licd_host="127.0.0.1"      # bind address
+#   licd_port="8777"           # listen port
+#   licd_allowlist="peace,blues,jazz,optiplex310"
+#   licd_token="change-me"
+#   licd_require_token="0"
+#
+# PROVIDE: licd
+# REQUIRE: NETWORKING cogboot
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="licd"
+rcvar=$name
+
+COGUSER="gross"
+COGDIR="/home/${COGUSER}"
+LICD_SRC="${COGDIR}/src/licd"
+STORAGE="${LICD_SRC}/storage"
+
+# rc.conf defaults
+licd_host="${licd_host:-127.0.0.1}"
+licd_port="${licd_port:-8777}"
+licd_allowlist="${licd_allowlist:-}"
+licd_token="${licd_token:-change-me}"
+licd_require_token="${licd_require_token:-0}"
+
+pidfile="/var/run/licd.pid"
+logfile="/var/log/licd.log"
+
+start_cmd="licd_start"
+stop_cmd="licd_stop"
+status_cmd="licd_status"
+
+licd_start()
+{
+    echo "licd: starting Local Inference Controller Daemon on ${licd_host}:${licd_port}"
+
+    if [ ! -f "${LICD_SRC}/licd.py" ]; then
+        echo "licd: ERROR — ${LICD_SRC}/licd.py not found. Run cogboot first."
+        return 1
+    fi
+
+    mkdir -p "${STORAGE}"
+    chown ${COGUSER} "${STORAGE}"
+
+    su -m ${COGUSER} -c "
+        cd ${LICD_SRC}
+        LICD_DB=${STORAGE}/licd.db \
+        LICD_HOST_ALLOWLIST=${licd_allowlist} \
+        LICD_SHARED_TOKEN=${licd_token} \
+        LICD_REQUIRE_TOKEN=${licd_require_token} \
+        python3 licd.py --host ${licd_host} --port ${licd_port} \
+            >> ${logfile} 2>&1 &
+        echo \$! > ${pidfile}
+    "
+
+    # Wait for health endpoint
+    attempts=0
+    while [ $attempts -lt 15 ]; do
+        if ftp -4 -q 1 -o - \
+            "http://${licd_host}:${licd_port}/health" >/dev/null 2>&1; then
+            echo "licd: healthy on port ${licd_port}"
+            return 0
+        fi
+        sleep 1
+        attempts=$((attempts + 1))
+    done
+
+    echo "licd: WARNING — health check timed out after 15 seconds"
+}
+
+licd_stop()
+{
+    if [ -f "${pidfile}" ]; then
+        pid=$(cat "${pidfile}")
+        echo "licd: stopping pid ${pid}"
+        kill "${pid}" 2>/dev/null
+        rm -f "${pidfile}"
+    else
+        echo "licd: not running"
+    fi
+}
+
+licd_status()
+{
+    if [ -f "${pidfile}" ]; then
+        pid=$(cat "${pidfile}")
+        if kill -0 "${pid}" 2>/dev/null; then
+            echo "licd: running as pid ${pid}"
+            ftp -4 -q 1 -o - \
+                "http://${licd_host}:${licd_port}/health" 2>/dev/null \
+                || echo "licd: WARNING — process up but health check failed"
+        else
+            echo "licd: pidfile exists but process ${pid} is dead"
+        fi
+    else
+        echo "licd: not running"
+    fi
+}
+
+load_rc_config $name
+run_rc_command "$1"
