@@ -11,8 +11,8 @@
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/var/log/com.cognition-os.cogboot.log</string>
+  <string>/usr/local/var/log/cognition-os/cogboot.log</string>
   <key>StandardErrorPath</key>
-  <string>/var/log/com.cognition-os.cogboot.err.log</string>
+  <string>/usr/local/var/log/cognition-os/cogboot.err.log</string>
 </dict>
 </plist>

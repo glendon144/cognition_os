@@ -35,6 +35,8 @@ fi
 
 install -d -m 755 /etc/cognition-os
 install -d -m 755 /usr/local/lib/cognition-os
+install -d -m 755 /usr/local/var/log/cognition-os
+chown "$COGUSER:staff" /usr/local/var/log/cognition-os 2>/dev/null || chown "$COGUSER" /usr/local/var/log/cognition-os
 install -d -m 755 /Library/LaunchDaemons
 install -m 644 "$SCRIPT_DIR/etc/cognition-os.env" /etc/cognition-os/cognition-os.env
 
@@ -51,6 +53,7 @@ perl -0pi -e "s#^COGBOOT_KNOWN_HOSTS=.*#COGBOOT_KNOWN_HOSTS=$COGDIR/.ssh/known_h
 install -m 755 "$SCRIPT_DIR/bin/cogboot-macos" /usr/local/lib/cognition-os/cogboot-macos
 install -m 755 "$SCRIPT_DIR/bin/bootstrap-shared-venv-macos" /usr/local/lib/cognition-os/bootstrap-shared-venv-macos
 install -m 755 "$SCRIPT_DIR/bin/run-service-macos" /usr/local/lib/cognition-os/run-service-macos
+install -m 755 "$SCRIPT_DIR/bin/doctor-macos" /usr/local/lib/cognition-os/doctor-macos
 
 # Keep this cognition_os checkout available at the path expected by the venv bootstrap.
 install -d -o "$COGUSER" -g staff "$COGDIR/src"
@@ -96,4 +99,4 @@ echo "  7. Start/check one service, for example:"
 echo "     sudo launchctl kickstart -k system/com.cognition-os.licd"
 echo "     sudo launchctl print system/com.cognition-os.licd"
 echo
-echo "Logs go to /var/log/com.cognition-os.<service>.log and .err.log"
+echo "Logs go to /usr/local/var/log/cognition-os/<service>.log and <service>.err.log"

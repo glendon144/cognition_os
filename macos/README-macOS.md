@@ -112,3 +112,17 @@ sudo launchctl bootout system /Library/LaunchDaemons/com.cognition-os.cogboot.pl
 macOS `launchd` does not provide systemd-style dependency ordering. For that reason, this port keeps bootstrap, venv creation, and service loading as explicit first-run steps. The service wrapper also waits briefly for expected files to appear, which helps after a fresh boot or repository sync.
 
 For a development Mac, the safest workflow is to run `cogboot`, then the shared venv bootstrap, then load only the services you actually want on that machine.
+
+
+## Troubleshooting `Bootstrap failed: 5: Input/output error`
+
+Run the installer again from this patched tree, then run:
+
+```sh
+sudo /usr/local/lib/cognition-os/doctor-macos
+plutil -lint /Library/LaunchDaemons/com.cognition-os.dream-server.plist
+ls -l /usr/local/lib/cognition-os/run-service-macos
+ls -ld /usr/local/var/log/cognition-os
+```
+
+This version writes logs under `/usr/local/var/log/cognition-os/` instead of `/var/log/`, because LaunchDaemons running as the non-root Cognition OS user may fail during bootstrap if launchd cannot open the configured stdout/stderr paths.

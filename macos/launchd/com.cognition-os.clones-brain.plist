@@ -19,8 +19,8 @@
     <false/>
   </dict>
   <key>StandardOutPath</key>
-  <string>/var/log/com.cognition-os.clones-brain.log</string>
+  <string>/usr/local/var/log/cognition-os/clones-brain.log</string>
   <key>StandardErrorPath</key>
-  <string>/var/log/com.cognition-os.clones-brain.err.log</string>
+  <string>/usr/local/var/log/cognition-os/clones-brain.err.log</string>
 </dict>
 </plist>

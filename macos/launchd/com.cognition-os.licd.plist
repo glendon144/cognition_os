@@ -19,8 +19,8 @@
     <false/>
   </dict>
   <key>StandardOutPath</key>
-  <string>/var/log/com.cognition-os.licd.log</string>
+  <string>/usr/local/var/log/cognition-os/licd.log</string>
   <key>StandardErrorPath</key>
-  <string>/var/log/com.cognition-os.licd.err.log</string>
+  <string>/usr/local/var/log/cognition-os/licd.err.log</string>
 </dict>
 </plist>

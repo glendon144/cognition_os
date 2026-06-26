@@ -19,8 +19,8 @@
     <false/>
   </dict>
   <key>StandardOutPath</key>
-  <string>/var/log/com.cognition-os.dream-server.log</string>
+  <string>/usr/local/var/log/cognition-os/dream-server.log</string>
   <key>StandardErrorPath</key>
-  <string>/var/log/com.cognition-os.dream-server.err.log</string>
+  <string>/usr/local/var/log/cognition-os/dream-server.err.log</string>
 </dict>
 </plist>

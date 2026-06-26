@@ -19,8 +19,8 @@
     <false/>
   </dict>
   <key>StandardOutPath</key>
-  <string>/var/log/com.cognition-os.tortoised.log</string>
+  <string>/usr/local/var/log/cognition-os/tortoised.log</string>
   <key>StandardErrorPath</key>
-  <string>/var/log/com.cognition-os.tortoised.err.log</string>
+  <string>/usr/local/var/log/cognition-os/tortoised.err.log</string>
 </dict>
 </plist>

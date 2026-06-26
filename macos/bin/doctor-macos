@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -u
+
+echo "Cognition OS macOS launchd doctor"
+echo
+for f in /Library/LaunchDaemons/com.cognition-os.*.plist; do
+  [ -e "$f" ] || continue
+  echo "== $f =="
+  ls -l "$f"
+  plutil -lint "$f" || true
+  echo
+done
+
+echo "== runner files =="
+ls -l /usr/local/lib/cognition-os || true
+echo
+echo "== log dir =="
+ls -ld /usr/local/var/log/cognition-os || true
+echo
+echo "== recent launchd messages =="
+log show --predicate 'process == "launchd"' --last 5m --style compact 2>/dev/null | tail -80 || true
