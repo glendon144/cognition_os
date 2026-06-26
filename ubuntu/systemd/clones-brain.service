@@ -1,0 +1,17 @@
+[Unit]
+Description=Cognition OS clones-brain memory service
+After=network-online.target cogboot.service
+Wants=network-online.target
+Requires=cogboot.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/cognition-os/cognition-os.env
+User=gross
+WorkingDirectory=/home/gross/src/clones-brain
+ExecStart=/bin/bash -lc 'exec "$COG_VENV/bin/python" -m uvicorn clones_brain.server:app --host "$CLONES_BRAIN_HOST" --port "$CLONES_BRAIN_PORT"'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

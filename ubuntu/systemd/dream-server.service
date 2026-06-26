@@ -1,0 +1,17 @@
+[Unit]
+Description=Cognition OS Dream capsule storage server
+After=network-online.target cogboot.service
+Wants=network-online.target
+Requires=cogboot.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/cognition-os/cognition-os.env
+User=gross
+WorkingDirectory=/home/gross/src/dream_server
+ExecStart=/bin/bash -lc 'exec "$COG_VENV/bin/python" -m uvicorn dream_server:app --host "$DREAM_SERVER_HOST" --port "$DREAM_SERVER_PORT"'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

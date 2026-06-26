@@ -1,0 +1,22 @@
+[Unit]
+Description=Cognition OS LICD Local Inference Controller
+After=network-online.target cogboot.service
+Wants=network-online.target
+Requires=cogboot.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/cognition-os/cognition-os.env
+User=gross
+WorkingDirectory=/home/gross/src/licd
+Environment=LICD_DB=/home/gross/src/licd/storage/licd.db
+ExecStartPre=/usr/bin/mkdir -p /home/gross/src/licd/storage
+ExecStart=/bin/bash -lc 'exec "$COG_VENV/bin/python" licd.py --host "$LICD_HOST" --port "$LICD_PORT"'
+Environment=LICD_HOST_ALLOWLIST=${LICD_ALLOWLIST}
+Environment=LICD_SHARED_TOKEN=${LICD_TOKEN}
+Environment=LICD_REQUIRE_TOKEN=${LICD_REQUIRE_TOKEN}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

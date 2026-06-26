@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cognition-os.cogboot</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/lib/cognition-os/cogboot-macos</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/var/log/com.cognition-os.cogboot.log</string>
+  <key>StandardErrorPath</key>
+  <string>/var/log/com.cognition-os.cogboot.err.log</string>
+</dict>
+</plist>

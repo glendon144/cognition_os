@@ -1,0 +1,17 @@
+[Unit]
+Description=Cognition OS tortoised inference service
+After=network-online.target cogboot.service
+Wants=network-online.target
+Requires=cogboot.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/cognition-os/cognition-os.env
+User=gross
+WorkingDirectory=/home/gross/src/tortoised
+ExecStart=/bin/bash -lc 'TORTOISED_HOST="$TORTOISED_HOST" TORTOISED_PORT="$TORTOISED_PORT" exec "$COG_VENV/bin/python" tortoised.py'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

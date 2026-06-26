@@ -1,0 +1,14 @@
+[Unit]
+Description=Cognition OS repository bootstrap
+After=network-online.target ssh.service
+Wants=network-online.target
+Before=licd.service tortoised.service clones-brain.service dream-server.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/cognition-os/cognition-os.env
+ExecStart=/usr/local/lib/cognition-os/cogboot-linux
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

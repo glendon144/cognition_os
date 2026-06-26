@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ENV_FILE="${COGNITION_OS_ENV:-/etc/cognition-os/cognition-os.env}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
+COGUSER="${COGUSER:-gross}"
+COGDIR="${COGDIR:-/home/$COGUSER}"
+COG_SRC="${COG_SRC:-$COGDIR/src}"
+GIT_BIN="${GIT_BIN:-/usr/bin/git}"
+BLUES_HOST="${BLUES_HOST:-blues.clonesvr.com}"
+COGBOOT_GIT_USER="${COGBOOT_GIT_USER:-$COGUSER}"
+COGBOOT_GIT_BRANCH="${COGBOOT_GIT_BRANCH:-main}"
+COGBOOT_SSH_KEY="${COGBOOT_SSH_KEY:-$COGDIR/.ssh/id_ed25519}"
+COGBOOT_KNOWN_HOSTS="${COGBOOT_KNOWN_HOSTS:-$COGDIR/.ssh/known_hosts}"
+COGBOOT_RETRY_COUNT="${COGBOOT_RETRY_COUNT:-5}"
+COGBOOT_RETRY_DELAY="${COGBOOT_RETRY_DELAY:-5}"
+
+REPO_SPECS=(
+  "licd:licd"
+  "tortoised:tortoised"
+  "clones-brain:clones-brain"
+  "dream:dream_server"
+)
+
+GIT_BASE="ssh://${COGBOOT_GIT_USER}@${BLUES_HOST}/home/${COGUSER}/git"
+GIT_SSH_COMMAND="ssh -i ${COGBOOT_SSH_KEY} -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile=${COGBOOT_KNOWN_HOSTS}"
+
+log() { printf 'cogboot-linux: %s\n' "$*"; }
+
+[[ -x "$GIT_BIN" ]] || { log "ERROR: git not executable at $GIT_BIN"; exit 1; }
+[[ -f "$COGBOOT_SSH_KEY" ]] || { log "ERROR: SSH key missing at $COGBOOT_SSH_KEY"; exit 1; }
+[[ -f "$COGBOOT_KNOWN_HOSTS" ]] || { log "ERROR: known_hosts missing at $COGBOOT_KNOWN_HOSTS"; exit 1; }
+
+chmod 600 "$COGBOOT_SSH_KEY" || true
+mkdir -p "$COG_SRC"
+chown -R "$COGUSER:$COGUSER" "$COG_SRC"
+
+run_as_user() {
+  sudo -H -u "$COGUSER" env HOME="$COGDIR" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" bash -lc "$*"
+}
+
+failed=0
+for spec in "${REPO_SPECS[@]}"; do
+  repo="${spec%%:*}"
+  checkout="${spec#*:}"
+  target="$COG_SRC/$checkout"
+  backup_suffix="pre-git-$(date +%Y%m%d-%H%M%S)"
+
+  attempt=0
+  while true; do
+    rc=0
+    if [[ -d "$target/.git" ]]; then
+      log "updating $repo in $target"
+      run_as_user "cd '$target' && '$GIT_BIN' pull --ff-only" || rc=$?
+    elif [[ -e "$target" ]]; then
+      backup="${target}.${backup_suffix}"
+      log "moving non-git path $target to $backup"
+      mv "$target" "$backup"
+      log "cloning $repo into $target"
+      run_as_user "'$GIT_BIN' clone --branch '$COGBOOT_GIT_BRANCH' '$GIT_BASE/$repo' '$target'" || rc=$?
+    else
+      log "cloning $repo into $target"
+      run_as_user "'$GIT_BIN' clone --branch '$COGBOOT_GIT_BRANCH' '$GIT_BASE/$repo' '$target'" || rc=$?
+    fi
+
+    if [[ $rc -eq 0 ]]; then
+      break
+    fi
+    attempt=$((attempt + 1))
+    if [[ $attempt -gt $COGBOOT_RETRY_COUNT ]]; then
+      log "ERROR: $repo failed after $COGBOOT_RETRY_COUNT retries"
+      failed=1
+      break
+    fi
+    log "retrying $repo ($attempt/$COGBOOT_RETRY_COUNT) after ${COGBOOT_RETRY_DELAY}s"
+    sleep "$COGBOOT_RETRY_DELAY"
+  done
+done
+
+[[ $failed -eq 0 ]] || exit 1
+log "all repositories ready"

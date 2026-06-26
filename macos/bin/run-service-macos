@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SERVICE="${1:-}"
+if [[ -z "$SERVICE" ]]; then
+  echo "run-service-macos: missing service name" >&2
+  exit 64
+fi
+
+ENV_FILE="${COGNITION_OS_ENV:-/etc/cognition-os/cognition-os.env}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
+COGUSER="${COGUSER:-gross}"
+COGDIR="${COGDIR:-/Users/$COGUSER}"
+COG_SRC="${COG_SRC:-$COGDIR/src}"
+COG_VENV="${COG_VENV:-$COGDIR/venvs/cognition-os}"
+PY="$COG_VENV/bin/python"
+
+log() { printf 'cognition-os:%s: %s\n' "$SERVICE" "$*"; }
+wait_for_path() {
+  local path="$1" label="$2" attempts="${3:-60}"
+  local n=0
+  while [[ $n -lt $attempts ]]; do
+    [[ -e "$path" ]] && return 0
+    n=$((n + 1))
+    sleep 1
+  done
+  log "ERROR: timed out waiting for $label at $path"
+  return 1
+}
+
+[[ -x "$PY" ]] || { log "ERROR: shared venv python missing at $PY; run bootstrap-shared-venv-macos"; exit 1; }
+
+case "$SERVICE" in
+  licd)
+    APP_DIR="$COG_SRC/licd"
+    wait_for_path "$APP_DIR/licd.py" "licd.py"
+    mkdir -p "$APP_DIR/storage"
+    export LICD_DB="$APP_DIR/storage/licd.db"
+    export LICD_HOST_ALLOWLIST="${LICD_ALLOWLIST:-}"
+    export LICD_SHARED_TOKEN="${LICD_TOKEN:-change-me}"
+    export LICD_REQUIRE_TOKEN="${LICD_REQUIRE_TOKEN:-0}"
+    cd "$APP_DIR"
+    exec "$PY" licd.py --host "${LICD_HOST:-127.0.0.1}" --port "${LICD_PORT:-8777}"
+    ;;
+  tortoised)
+    APP_DIR="$COG_SRC/tortoised"
+    wait_for_path "$APP_DIR/tortoised.py" "tortoised.py"
+    export TORTOISED_HOST="${TORTOISED_HOST:-127.0.0.1}"
+    export TORTOISED_PORT="${TORTOISED_PORT:-8767}"
+    cd "$APP_DIR"
+    exec "$PY" tortoised.py
+    ;;
+  clones-brain)
+    APP_DIR="$COG_SRC/clones-brain"
+    wait_for_path "$APP_DIR" "clones-brain checkout"
+    cd "$APP_DIR"
+    exec "$PY" -m uvicorn clones_brain.server:app --host "${CLONES_BRAIN_HOST:-127.0.0.1}" --port "${CLONES_BRAIN_PORT:-8765}"
+    ;;
+  dream-server)
+    APP_DIR="$COG_SRC/dream_server"
+    wait_for_path "$APP_DIR" "dream_server checkout"
+    cd "$APP_DIR"
+    exec "$PY" -m uvicorn dream_server:app --host "${DREAM_SERVER_HOST:-127.0.0.1}" --port "${DREAM_SERVER_PORT:-8181}"
+    ;;
+  *)
+    log "ERROR: unknown service '$SERVICE'"
+    exit 64
+    ;;
+esac

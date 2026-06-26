@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ENV_FILE="${COGNITION_OS_ENV:-/etc/cognition-os/cognition-os.env}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
+COGUSER="${COGUSER:-${SUDO_USER:-gross}}"
+COGDIR="${COGDIR:-/Users/$COGUSER}"
+COG_VENV="${COG_VENV:-$COGDIR/venvs/cognition-os}"
+PYTHON_BIN="${PYTHON_BIN:-/usr/bin/python3}"
+SHARED_REQ="${SHARED_REQ:-$COGDIR/src/cognition_os/requirements-shared-venv.txt}"
+
+[[ -x "$PYTHON_BIN" ]] || { echo "bootstrap-shared-venv-macos: python not executable at $PYTHON_BIN" >&2; exit 1; }
+[[ -f "$SHARED_REQ" ]] || { echo "bootstrap-shared-venv-macos: missing requirements at $SHARED_REQ" >&2; exit 1; }
+
+mkdir -p "$COGDIR/venvs"
+chown "$COGUSER:staff" "$COGDIR/venvs" 2>/dev/null || chown "$COGUSER" "$COGDIR/venvs"
+
+if [[ ! -x "$COG_VENV/bin/python" ]]; then
+  sudo -H -u "$COGUSER" "$PYTHON_BIN" -m venv "$COG_VENV"
+fi
+
+sudo -H -u "$COGUSER" "$COG_VENV/bin/python" -m pip install --upgrade pip setuptools wheel
+sudo -H -u "$COGUSER" "$COG_VENV/bin/python" -m pip install -r "$SHARED_REQ"
+
+echo "bootstrap-shared-venv-macos: ready at $COG_VENV"
