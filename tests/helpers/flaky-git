@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+: "${COGBOOT_FLAKY_STATE:?}"
+count=0
+[ ! -f "$COGBOOT_FLAKY_STATE" ] || count=$(cat "$COGBOOT_FLAKY_STATE")
+count=$((count + 1))
+printf '%s\n' "$count" > "$COGBOOT_FLAKY_STATE"
+if [ "$count" -le "${COGBOOT_FLAKY_FAILURES:-1}" ]; then
+    echo "simulated transient Git failure" >&2
+    exit 75
+fi
+exec git "$@"

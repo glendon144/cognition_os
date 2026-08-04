@@ -1,0 +1,3 @@
+#!/bin/sh
+sleep "${COGBOOT_SLEEP_SECONDS:-10}"
+exec git "$@"
