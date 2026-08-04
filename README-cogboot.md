@@ -1,5 +1,12 @@
 # Cognition OS — NetBSD rc.d Service Scripts
 
+> A portable, opt-in C99 implementation now lives in `src/`. The existing
+> shell rc.d implementation remains the production default. See
+> [docs/native-cogboot.md](docs/native-cogboot.md) for analysis, build and CLI
+> usage, manifest syntax, compatibility, limitations, and failure semantics;
+> see [docs/native-migration.md](docs/native-migration.md) for the NetBSD-first
+> rollout and incremental native-core architecture.
+
 These rc.d scripts implement the Cognition OS boot model: a NetBSD VM that
 clones its cognitive services from blues.clonesvr.com at boot and starts
 them automatically, presenting /health endpoints before the system is
