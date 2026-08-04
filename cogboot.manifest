@@ -1,0 +1,6 @@
+# cogboot manifest v1 -- fields are TAB-separated:
+# requirement<TAB>name<TAB>checkout<TAB>repository-url<TAB>branch
+required	licd	licd	ssh://gross@blues.clonesvr.com/home/gross/git/licd	main
+required	tortoised	tortoised	ssh://gross@blues.clonesvr.com/home/gross/git/tortoised	main
+required	clones-brain	clones-brain	ssh://gross@blues.clonesvr.com/home/gross/git/clones-brain	main
+required	dream	dream_server	ssh://gross@blues.clonesvr.com/home/gross/git/dream	main
