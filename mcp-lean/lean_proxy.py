@@ -261,6 +261,31 @@ def edit_tools(tools):
     return out
 
 
+STOPWORDS = {"the", "and", "for", "with", "that", "this", "from", "are", "was", "how", "what",
+             "about", "into", "can", "could", "should", "would", "does", "has", "have", "its", "our"}
+
+
+def relax_query(query):
+    """Turn a multi-word query into an OR query of its significant terms."""
+    words = [w for w in "".join(c if c.isalnum() else " " for c in query).split()
+             if len(w) >= 3 and w.lower() not in STOPWORDS]
+    seen, terms = set(), []
+    for w in words:
+        if w.lower() not in seen:
+            seen.add(w.lower())
+            terms.append(w)
+    return " OR ".join(terms[:8]) if len(terms) >= 2 else None
+
+
+def result_is_empty(resp):
+    try:
+        text = resp["result"]["content"][0]["text"]
+        data = json.loads(text)
+    except (KeyError, IndexError, TypeError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get("ok") and not data.get("thoughts")
+
+
 def handle_call(req):
     params = req.get("params") or {}
     name = to_internal(params.get("name", ""))
@@ -283,6 +308,20 @@ def handle_call(req):
 
     resp = child_request({"jsonrpc": "2.0", "id": req.get("id"), "method": "tools/call",
                           "params": {"name": name, "arguments": args}})
+    if PROFILE_NAME == "clones_brain" and name == "search_thoughts" and result_is_empty(resp):
+        # The server ANDs every word, so long natural-language queries find nothing.
+        relaxed = relax_query(str(args.get("query", "")))
+        if relaxed:
+            retry_args = dict(args, query=relaxed)
+            resp = child_request({"jsonrpc": "2.0", "id": req.get("id"), "method": "tools/call",
+                                  "params": {"name": name, "arguments": retry_args}})
+            try:
+                item = resp["result"]["content"][0]
+                data = json.loads(item["text"])
+                data["note"] = "no exact match; showing results for any of: " + relaxed
+                item["text"] = json.dumps(data, ensure_ascii=False)
+            except (KeyError, IndexError, TypeError, ValueError):
+                pass
     expand = full or name in P.get("expand_tools", set())
     result = resp.get("result")
     if isinstance(result, dict):
