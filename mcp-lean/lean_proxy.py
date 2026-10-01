@@ -265,6 +265,12 @@ STOPWORDS = {"the", "and", "for", "with", "that", "this", "from", "are", "was", 
              "about", "into", "can", "could", "should", "would", "does", "has", "have", "its", "our"}
 
 
+def clean_query(query):
+    """Strip punctuation that breaks the servers' full-text search ("pikit?", "licd-console")."""
+    cleaned = "".join(c if (c.isalnum() or c == "_") else " " for c in query)
+    return " ".join(cleaned.split()) or query
+
+
 def relax_query(query):
     """Turn a multi-word query into an OR query of its significant terms."""
     words = [w for w in "".join(c if c.isalnum() else " " for c in query).split()
@@ -308,6 +314,9 @@ def handle_call(req):
         if full and arg == "limit":
             maximum = P["full_tools"][name]
         args[arg] = min(max(val, 1), maximum)
+
+    if name in ("search_thoughts", "weave_search") and isinstance(args.get("query"), str):
+        args["query"] = clean_query(args["query"])
 
     resp = child_request({"jsonrpc": "2.0", "id": req.get("id"), "method": "tools/call",
                           "params": {"name": name, "arguments": args}})
