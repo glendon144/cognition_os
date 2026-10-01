@@ -283,7 +283,10 @@ def result_is_empty(resp):
         data = json.loads(text)
     except (KeyError, IndexError, TypeError, ValueError):
         return False
-    return isinstance(data, dict) and data.get("ok") and not data.get("thoughts")
+    if not (isinstance(data, dict) and data.get("ok")):
+        return False
+    key = "thoughts" if "thoughts" in data else "records"
+    return key in data and not data.get(key)
 
 
 def handle_call(req):
@@ -308,7 +311,7 @@ def handle_call(req):
 
     resp = child_request({"jsonrpc": "2.0", "id": req.get("id"), "method": "tools/call",
                           "params": {"name": name, "arguments": args}})
-    if PROFILE_NAME == "clones_brain" and name == "search_thoughts" and result_is_empty(resp):
+    if name in ("search_thoughts", "weave_search") and result_is_empty(resp):
         # The server ANDs every word, so long natural-language queries find nothing.
         relaxed = relax_query(str(args.get("query", "")))
         if relaxed:
