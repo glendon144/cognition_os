@@ -1,0 +1,42 @@
+{
+  "mcpServers": {
+    "clones_brain": {
+      "command": "/Users/gross/venvs/cognition-os/bin/python",
+      "args": [
+        "/Users/gross/src/cognition_os/mcp-lean/lean_proxy.py",
+        "clones_brain",
+        "--",
+        "/Users/gross/venvs/cognition-os/bin/python",
+        "/Users/gross/src/clones-brain/clones_brain_mcp_stdio.py"
+      ],
+      "env": {
+        "CLONES_BRAIN_URL": "http://127.0.0.1:8765",
+        "CLONES_BRAIN_MCP_ALLOW_WRITE": "0"
+      }
+    },
+    "dream": {
+      "command": "/Users/gross/venvs/cognition-os/bin/python",
+      "args": [
+        "/Users/gross/src/cognition_os/mcp-lean/lean_proxy.py",
+        "dream",
+        "--",
+        "/Users/gross/venvs/cognition-os/bin/python",
+        "/Users/gross/src/dream_server/dream_mcp_readonly_stdio.py"
+      ],
+      "env": {
+        "DREAM_BASE_URL": "http://127.0.0.1:8181",
+        "DREAM_MCP_TIMEOUT": "12"
+      }
+    },
+    "licd": {
+      "command": "/Users/gross/venvs/cognition-os/bin/python",
+      "args": [
+        "/Users/gross/src/licd/licd_mcp_readonly_stdio.py"
+      ],
+      "env": {
+        "LICD_URL": "http://127.0.0.1:8777",
+        "LICD_MCP_TIMEOUT": "8"
+      }
+    }
+  }
+}
