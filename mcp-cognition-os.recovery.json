@@ -51,6 +51,14 @@
         "LICD_URL": "http://127.0.0.1:8777",
         "LICD_MCP_TIMEOUT": "8"
       }
+    },
+    "echovault": {
+      "command": "/Users/gross/src/echovault/.venv/bin/echovault-mcp",
+      "args": [],
+      "env": {
+        "ECHOVAULT_URL": "http://127.0.0.1:5052",
+        "ECHOVAULT_MODEL": "sentence-transformers/all-MiniLM-L6-v2"
+      }
     }
   }
 }
