@@ -76,4 +76,4 @@ ANSWER STYLE
 - Be concise. Lead with the answer, then the evidence with IDs.
 - Say what you did not check (for example, "I did not read the broker code").
 - When you did not call a tool, say "I did not check X", never "X shows nothing".
-- No praise, no emoji, and no menu of offers at the end.
+- No praise and no menu of offers at the end. Emoji are welcome where they fit.
