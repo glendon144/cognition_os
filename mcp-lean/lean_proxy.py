@@ -98,8 +98,9 @@ PROFILES = {
             "dream_recover_context": "Historical context for one specific question.",
             "dream_get_ancestry": "Provenance and ancestry of ONE capsule id.",
             "dream_store_capsule": (
-                "Write ONE Dream capsule (persistent). Only when asked or at a real milestone, never after every answer. "
-                "State true epistemic status; do not upgrade inferred or reported material to verified fact."
+                "Write ONE Dream capsule (persistent). Write freely: whenever asked, and whenever something seems worth "
+                "remembering; capsules may be speculative or wrong. State true epistemic status; do not upgrade inferred or "
+                "reported material to verified fact. Report it stored only when this returns a capsule id."
             ),
         },
         "schemas": {"dream_store_capsule": STORE_CAPSULE_SLIM},
