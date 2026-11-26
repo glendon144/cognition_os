@@ -4,6 +4,7 @@ A stdio MCP server that gives Qwinn one public web page per call, distilled to h
 
 - `funkit_fetch.py` holds the fetch and outline code, lifted from FunKit (`ai_dream_communicator_deluxe` main @ 883efd6). Its docstring lists every change from the originals.
 - `rag_fetch_mcp.py` is the MCP server. It can also be run from the shell: `rag_fetch_mcp.py URL [query]`.
+- `echovault_cap_proxy.py` wraps the existing EchoVault MCP server. It caps `echovault_search` at 3 results and 900-char snippets, in both the advertised schema and the actual call, and passes every other message through unchanged. This came out of verify step 1: with top_k=5, result #5 from another conversation got merged into her answer.
 - Run the tests with `~/.venvs/quinn-rag/bin/python -m unittest mcp-rag/test_rag_fetch.py -v`.
 
 ## Policy and budgets as shipped
@@ -21,7 +22,7 @@ A stdio MCP server that gives Qwinn one public web page per call, distilled to h
 | Output cap | 7,000 chars per result (`RAG_FETCH_MAX_OUT`), chunks up to 1,200 chars |
 | User-Agent | `FunKit-OPML-Crawler/1.0 (Qwinn rag_fetch; read-only, one page per call)` |
 
-Page text comes back inside fenced blocks, under a header that marks it as untrusted data.
+Page text comes back inside fenced blocks, under a header that marks it as untrusted data. When the page was truncated, a `WARNING — PARTIAL PAGE` line is also added at the end of the result, so the model sees it right before answering.
 
 ## Setup (m6)
 
@@ -36,5 +37,17 @@ Entry for llama-server's `--mcp-servers-config`:
 "rag": {
   "command": "/Users/gross/.venvs/quinn-rag/bin/python",
   "args": ["/Users/gross/src/cognition_os-rag-fetch/mcp-rag/rag_fetch_mcp.py"]
+}
+```
+
+Wrapping EchoVault (the server name stays `echovault`, so the tool is still `echovault_echovault_search`):
+
+```json
+"echovault": {
+  "command": "/Users/gross/.venvs/quinn-rag/bin/python",
+  "args": ["/Users/gross/src/cognition_os-rag-fetch/mcp-rag/echovault_cap_proxy.py", "--",
+           "/Users/gross/src/echovault/.venv/bin/echovault-mcp"],
+  "env": {"ECHOVAULT_URL": "http://127.0.0.1:5052",
+          "ECHOVAULT_MODEL": "sentence-transformers/all-MiniLM-L6-v2"}
 }
 ```

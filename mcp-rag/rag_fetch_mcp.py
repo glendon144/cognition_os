@@ -98,6 +98,10 @@ def rag_fetch(url: str, query: str | None = None) -> str:
                 f"{'; ranked by query' if query else '; in page order — pass query to pick sections'}._")
     if not chunks:
         out += "\n\n_No text found in the page outline._"
+    if res.truncated:
+        # Repeated last, where the model reads it before answering.
+        out += (f"\n\nWARNING — PARTIAL PAGE: only the first {res.bytes_read:,} bytes were read "
+                f"({res.truncated_reason}). Tell the user your answer is based on part of the page.")
     out += f"\n_total tool time {time.monotonic() - t0:.2f}s_"
     return out
 
