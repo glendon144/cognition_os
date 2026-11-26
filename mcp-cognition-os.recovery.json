@@ -59,6 +59,12 @@
         "ECHOVAULT_URL": "http://127.0.0.1:5052",
         "ECHOVAULT_MODEL": "sentence-transformers/all-MiniLM-L6-v2"
       }
+    },
+    "rag": {
+      "command": "/Users/gross/.venvs/quinn-rag/bin/python",
+      "args": [
+        "/Users/gross/src/cognition_os-rag-fetch/mcp-rag/rag_fetch_mcp.py"
+      ]
     }
   }
 }
