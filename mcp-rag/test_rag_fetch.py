@@ -106,5 +106,43 @@ class Redirects(unittest.TestCase):
             ff._fetch_with(fake_hop, None, "https://en.wikipedia.org/", "test")
 
 
+class TruncationNotice(unittest.TestCase):
+    def test_notice_repeated_at_end(self):
+        res = ff.FetchResult("https://en.wikipedia.org/", "<h1>A</h1><p>x</p>", ff.MAX_BYTES,
+                             True, "byte cap 2,000,000 reached", "text/html")
+        orig = ff.fetch_html_with_fallback
+        ff.fetch_html_with_fallback = lambda url: res
+        try:
+            out = rf.rag_fetch("https://en.wikipedia.org/")
+        finally:
+            ff.fetch_html_with_fallback = orig
+        tail = out.rsplit("### chunk", 1)[-1]
+        self.assertIn("WARNING — PARTIAL PAGE", tail)
+        self.assertIn("truncated: YES", out.split("### chunk")[0])
+
+
+class EchoVaultCap(unittest.TestCase):
+    def test_clamp(self):
+        import echovault_cap_proxy as cap
+        self.assertEqual(cap.clamp_args({"params": {"query": "x", "top_k": 5}})["params"]["top_k"], 3)
+        self.assertEqual(cap.clamp_args({"params": {"query": "x"}})["params"]["top_k"], 3)
+        self.assertEqual(cap.clamp_args({"params": {"query": "x", "top_k": 0}})["params"]["top_k"], 1)
+        self.assertEqual(cap.clamp_args({"params": {"query": "x", "top_k": "junk",
+                                                    "snippet_chars": 5000}})["params"],
+                         {"query": "x", "top_k": 3, "snippet_chars": 900})
+
+    def test_schema_rewrite(self):
+        import echovault_cap_proxy as cap
+        res = {"tools": [{"name": "echovault_search", "description": "d", "inputSchema": {
+            "$defs": {"SearchInput": {"properties": {"top_k": {"default": 8, "maximum": 50},
+                                                     "snippet_chars": {"maximum": 5000}}}}}},
+                         {"name": "echovault_status", "description": "s"}]}
+        out = cap.rewrite_tools(res)["tools"]
+        p = out[0]["inputSchema"]["$defs"]["SearchInput"]["properties"]
+        self.assertEqual((p["top_k"]["default"], p["top_k"]["maximum"]), (3, 3))
+        self.assertEqual(p["snippet_chars"]["maximum"], 900)
+        self.assertEqual(out[1]["description"], "s")
+
+
 if __name__ == "__main__":
     unittest.main()
