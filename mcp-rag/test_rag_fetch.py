@@ -88,7 +88,7 @@ class Redirects(unittest.TestCase):
             ff._guarded_getaddrinfo("localhost", 80)
 
     def test_byte_cap_reported(self):
-        body = [b"<html><body><h1>A</h1><p>" + b"x" * 70000 + b"</p>"] * 40
+        body = [b"<html><body><h1>A</h1><p>" + b"x" * 70000 + b"</p>"] * 70
 
         def fake_hop(_session, url):
             return ff._Hop(200, None, "text/html; charset=utf-8", iter(body), lambda: None)
@@ -109,7 +109,7 @@ class Redirects(unittest.TestCase):
 class TruncationNotice(unittest.TestCase):
     def test_notice_repeated_at_end(self):
         res = ff.FetchResult("https://en.wikipedia.org/", "<h1>A</h1><p>x</p>", ff.MAX_BYTES,
-                             True, "byte cap 2,000,000 reached", "text/html")
+                             True, "byte cap 4,000,000 reached", "text/html")
         orig = ff.fetch_html_with_fallback
         ff.fetch_html_with_fallback = lambda url: res
         try:
@@ -119,6 +119,131 @@ class TruncationNotice(unittest.TestCase):
         tail = out.rsplit("### chunk", 1)[-1]
         self.assertIn("WARNING — PARTIAL PAGE", tail)
         self.assertIn("truncated: YES", out.split("### chunk")[0])
+
+
+def _texts(html):
+    _, root = ff.html_to_outline(html)
+    return {" › ".join(p): t for p, t in ff.outline_chunks(root)}
+
+
+class CodeStripping(unittest.TestCase):
+    """Scripts and styles don't count toward the 2 MB cap (CNN: 7.3 MB raw, <1 MB of page)."""
+
+    PAGE = (b"<html><head><style>body{color:red}</style><script>var x='<p>no</p>';</script>"
+            b"<!-- a comment --></head><body><h1>Title</h1><SCRIPT type=x>1</SCRIPT>"
+            b"<p>kept text</p><svg><path d='M0'/></svg><p>more</p></body></html>")
+
+    def test_strips_whole_page(self):
+        out = ff.CodeStripper().feed(self.PAGE, final=True)
+        for gone in (b"color:red", b"var x", b"comment", b"M0", b"SCRIPT"):
+            self.assertNotIn(gone, out)
+        self.assertIn(b"<p>kept text</p>", out)
+        self.assertIn(b"<p>more</p>", out)
+
+    def test_every_split_point_gives_same_result(self):
+        whole = ff.CodeStripper().feed(self.PAGE, final=True)
+        for cut in range(1, len(self.PAGE)):
+            st = ff.CodeStripper()
+            got = st.feed(self.PAGE[:cut]) + st.feed(self.PAGE[cut:], final=True)
+            self.assertEqual(got, whole, cut)
+
+    def test_unclosed_script_is_dropped_at_end(self):
+        st = ff.CodeStripper()
+        self.assertEqual(st.feed(b"<p>a</p><script>never closed", final=True), b"<p>a</p>")
+
+    def test_script_heavy_page_is_not_truncated(self):
+        # 5 MB of inline script ahead of the text: the old code hit the cap and
+        # returned no text at all.
+        body = [b"<html><body><script>" + b"x" * 65536] * 80 + \
+               [b"</script><h1>News</h1><p>the real story</p></body></html>"]
+
+        def fake_hop(_session, url):
+            return ff._Hop(200, None, "text/html", iter(body), lambda: None)
+
+        res = ff._fetch_with(fake_hop, None, "https://en.wikipedia.org/", "test")
+        self.assertFalse(res.truncated)
+        self.assertGreater(res.downloaded, ff.MAX_BYTES)
+        self.assertLess(res.bytes_read, 200)
+        self.assertIn("the real story", _texts(res.html)["News"])
+
+    def test_download_cap(self):
+        body = iter(lambda: b"<script>" + b"x" * 65536, None)
+
+        def fake_hop(_session, url):
+            return ff._Hop(200, None, "text/html", body, lambda: None)
+
+        res = ff._fetch_with(fake_hop, None, "https://en.wikipedia.org/", "test")
+        self.assertTrue(res.truncated)
+        self.assertIn("download cap", res.truncated_reason)
+
+
+class TextExtraction(unittest.TestCase):
+    def test_menus_banners_and_footers_removed(self):
+        t = _texts("""<body><header><a>Home</a> <a>Sport</a></header>
+          <nav><ul><li>World</li><li>Business</li></ul></nav>
+          <div role="navigation"><div>Menu item</div></div>
+          <h1>Story</h1><p>body text</p><aside><p>Most read</p></aside>
+          <form><button>Subscribe</button></form><footer>Copyright</footer></body>""")
+        joined = " ".join(t.values())
+        self.assertIn("body text", t["Story"])
+        for gone in ("Home", "World", "Menu item", "Most read", "Subscribe", "Copyright"):
+            self.assertNotIn(gone, joined)
+
+    def test_article_header_is_kept(self):
+        t = _texts("""<body><header>Site banner</header><article><header><h1>Headline</h1>
+          <div>By A. Writer</div></header><p>story</p></article></body>""")
+        self.assertIn("By A. Writer", t["Headline"])
+        self.assertIn("story", t["Headline"])
+        self.assertNotIn("Site banner", " ".join(t.values()))
+
+    def test_text_in_plain_blocks(self):
+        # Card layouts with no <p>: the old extractor dropped all of this.
+        t = _texts("""<body><h2>Latest</h2><div class="card"><div class="title">Storm hits coast</div>
+          <span class="summary">Thousands without power</span></div>
+          <section><div>Second story</div></section><blockquote>A quote</blockquote></body>""")
+        self.assertIn("Storm hits coast", t["Latest"])
+        self.assertIn("Thousands without power", t["Latest"])
+        self.assertIn("Second story", t["Latest"])
+        self.assertIn("A quote", t["Latest"])
+
+    def test_tables_read_by_row_inside_layout_table(self):
+        # Hacker News: story rows sit in a table nested in a layout table.
+        t = _texts("""<body><table id="main"><tr><td><table>
+          <tr class="athing"><td>1.</td><td><span><a>Hard drive prices</a> (ktz.me)</span></td></tr>
+          <tr><td></td><td>213 points | 133 comments</td></tr>
+          </table></td></tr></table></body>""")
+        text = t["Unsorted"]
+        self.assertIn("1. | Hard drive prices (ktz.me)", text)
+        self.assertIn("213 points | 133 comments", text)
+        self.assertEqual(text.count("Hard drive prices"), 1)
+
+    def test_nothing_read_twice(self):
+        t = _texts("""<body><h1>A</h1><div><p>para <b>bold</b></p></div>
+          <ul><li><div>item text</div></li></ul><table><tr><td><p>cell para</p></td></tr></table></body>""")
+        text = t["A"]
+        self.assertEqual(text.count("para bold"), 1)
+        self.assertEqual(text.count("item text"), 1)
+        self.assertEqual(text.count("cell para"), 1)
+
+    def test_repeated_cards_appear_once(self):
+        t = _texts("""<body><h1>Front</h1><div>Story one</div><div>Story two</div>
+          <div>Story one</div><div>Story two</div></body>""")
+        self.assertEqual(t["Front"], "Story one\nStory two")
+
+    def test_duplicate_chunks_dropped_from_result(self):
+        html = ("<h2>Same headline</h2><p>same summary</p>" * 2) + "<h2>Other</h2><p>x y</p>"
+        res = ff.FetchResult("https://en.wikipedia.org/", html, len(html), False, None, "text/html")
+        orig = ff.fetch_html_with_fallback
+        ff.fetch_html_with_fallback = lambda url: res
+        try:
+            out = rf.rag_fetch("https://en.wikipedia.org/")
+        finally:
+            ff.fetch_html_with_fallback = orig
+        self.assertEqual(out.count("same summary"), 1)
+        self.assertIn("chunk 2/2", out)
+
+    def test_output_cap_default(self):
+        self.assertEqual(rf.MAX_OUT, int(os.environ.get("RAG_FETCH_MAX_OUT", "12000")))
 
 
 class EchoVaultCap(unittest.TestCase):

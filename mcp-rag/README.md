@@ -3,6 +3,7 @@
 A stdio MCP server that gives Qwinn one public web page per call, distilled to heading-path chunks. Each chunk carries the source URL, page title and heading path. llama-server registers it as server `rag`, so the model sees the tool as `rag_rag_fetch(url, query?)`.
 
 - `funkit_fetch.py` holds the fetch and outline code, lifted from FunKit (`ai_dream_communicator_deluxe` main @ 883efd6). Its docstring lists every change from the originals.
+- What is read: headings, paragraphs, lists, table rows (`cell | cell`), and text in plain blocks such as `div` and `section`. Site menus, banners, footers, sidebars, forms and dialogs are removed first. Pages that build their text with JavaScript still come back nearly empty, and some sites (AP, NYT, Reuters) refuse the fetcher with 401 or 403.
 - `rag_fetch_mcp.py` is the MCP server. It can also be run from the shell: `rag_fetch_mcp.py URL [query]`.
 - `echovault_cap_proxy.py` wraps the existing EchoVault MCP server. It caps `echovault_search` at 3 results and 900-char snippets, in both the advertised schema and the actual call, and passes every other message through unchanged. This came out of verify step 1: with top_k=5, result #5 from another conversation got merged into her answer.
 - Run the tests with `~/.venvs/quinn-rag/bin/python -m unittest mcp-rag/test_rag_fetch.py -v`.
@@ -17,9 +18,9 @@ A stdio MCP server that gives Qwinn one public web page per call, distilled to h
 | When checked | before connecting, inside `getaddrinfo` (the connect-time address), and on every redirect hop |
 | Redirects | 3 at most, followed by hand |
 | Proxies | ignored (env proxies and netrc are not used) |
-| Body cap | 2,000,000 bytes; truncation is reported in the result header |
+| Body cap | 4,000,000 bytes of page content, counted after scripts, styles, inline SVG and comments are stripped while downloading; 12,000,000 raw bytes downloaded at most. Truncation is reported in the result header |
 | Time | 5 s connect, 10 s read, 20 s total budget |
-| Output cap | 7,000 chars per result (`RAG_FETCH_MAX_OUT`), chunks up to 1,200 chars |
+| Output cap | 12,000 chars per result (`RAG_FETCH_MAX_OUT`), chunks up to 1,200 chars; duplicate chunks are dropped |
 | User-Agent | `FunKit-OPML-Crawler/1.0 (Qwinn rag_fetch; read-only, one page per call)` |
 
 Page text comes back inside fenced blocks, under a header that marks it as untrusted data. When the page was truncated, a `WARNING — PARTIAL PAGE` line is also added at the end of the result, so the model sees it right before answering.

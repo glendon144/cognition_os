@@ -6,7 +6,7 @@ Registered in llama-server's --mcp-servers-config as server "rag"; the tool
 appears to the model as rag_rag_fetch.
 
 Environment knobs (optional):
-  RAG_FETCH_MAX_OUT      cap on the whole tool result, chars   (default 7000)
+  RAG_FETCH_MAX_OUT      cap on the whole tool result, chars   (default 12000)
   RAG_FETCH_CHUNK_CHARS  max chars per chunk                    (default 1200)
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ import funkit_fetch as ff  # noqa: E402
 
 ff.install_address_guard()
 
-MAX_OUT = int(os.environ.get("RAG_FETCH_MAX_OUT", "7000"))
+MAX_OUT = int(os.environ.get("RAG_FETCH_MAX_OUT", "12000"))
 CHUNK_CHARS = int(os.environ.get("RAG_FETCH_CHUNK_CHARS", "1200"))
 
 TOOL = {
@@ -61,7 +61,11 @@ def rag_fetch(url: str, query: str | None = None) -> str:
     except Exception as e:
         return f"rag_fetch error: fetch failed for {url}: {type(e).__name__}: {e}"
     title, root = ff.html_to_outline(res.html)
-    chunks = [(p, t) for p, t in ff.outline_chunks(root, CHUNK_CHARS)]
+    chunks, seen = [], set()
+    for p, t in ff.outline_chunks(root, CHUNK_CHARS):
+        if (tuple(p), t) not in seen:     # the same story card often appears twice
+            seen.add((tuple(p), t))
+            chunks.append((p, t))
     order = list(range(len(chunks)))
     if query:
         terms = set(_WORD.findall(query.lower()))
@@ -78,9 +82,10 @@ def rag_fetch(url: str, query: str | None = None) -> str:
     if res.redirects:
         head.append(f"redirected_from: {url}")
     head.append(
-        f"fetch: {res.bytes_read:,} bytes, {res.elapsed_s}s via {res.backend}; "
+        f"fetch: {res.downloaded or res.bytes_read:,} bytes downloaded, {res.bytes_read:,} kept "
+        f"after removing scripts and styles, {res.elapsed_s}s via {res.backend}; "
         f"truncated: {'YES — ' + res.truncated_reason + ' (page content after the cap is missing)' if res.truncated else 'no'}; "
-        f"limits: max_bytes={ff.MAX_BYTES:,}, budget={ff.BUDGET_S:.0f}s, "
+        f"limits: max_bytes={ff.MAX_BYTES:,} kept, {ff.MAX_DOWNLOAD_BYTES:,} downloaded, budget={ff.BUDGET_S:.0f}s, "
         f"timeouts={ff.CONNECT_TIMEOUT_S:.0f}s/{ff.READ_TIMEOUT_S:.0f}s, redirects<={ff.MAX_REDIRECTS}"
     )
     out = "\n".join(head)
@@ -100,7 +105,7 @@ def rag_fetch(url: str, query: str | None = None) -> str:
         out += "\n\n_No text found in the page outline._"
     if res.truncated:
         # Repeated last, where the model reads it before answering.
-        out += (f"\n\nWARNING — PARTIAL PAGE: only the first {res.bytes_read:,} bytes were read "
+        out += (f"\n\nWARNING — PARTIAL PAGE: only the first {res.bytes_read:,} bytes of page content were read "
                 f"({res.truncated_reason}). Tell the user your answer is based on part of the page.")
     out += f"\n_total tool time {time.monotonic() - t0:.2f}s_"
     return out
